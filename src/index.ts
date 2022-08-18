@@ -1,5 +1,14 @@
 /****************************************************************************
  *
+ * @file constants
+ *
+ ****************************************************************************/
+
+const WALL_THICKNESS = 1 / 8;
+const DETAIL = 2; // make this bigger to get more curve
+
+/****************************************************************************
+ *
  * @file raii
  *
  * RAII is a useful concept from C++.
@@ -227,9 +236,63 @@ const CUBE = new Float32Array([
 const IDENTITY = new Float32Array([
 	1, 0, 0, 0,
 	0, 1, 0, 0,
-	.1, .5, 1, 0,
+	0, 0, 1, 0,
 	0, 0, 0, 1,
 ]);
+
+/****************************************************************************
+ *
+ * @file game geometry
+ *
+ ****************************************************************************/
+
+function makeWall() {
+	const STEP = WALL_THICKNESS / DETAIL;
+
+	const points: number[] = [];
+	const vertex = (x: number, y: number, z: number) => {
+		points.push(x, y, z);
+	};
+
+	// the south wall
+	for (let x = 0; x <= 1; x += STEP) {
+		vertex(x, 0, 0);
+		vertex(x, 0, 1);
+	}
+
+	// the top of the south wall
+	// (this does not work with the DETAIL stuff)
+	for (let x = 0; x <= 1; x += STEP) {
+		vertex(x, 0, 1);
+		vertex(x, WALL_THICKNESS, 1);
+	}
+
+	// the right of the south wall
+	vertex(1, 0, 0);
+	vertex(1, 0, 1);
+	vertex(1, WALL_THICKNESS, 0);
+	vertex(1, WALL_THICKNESS, 1);
+
+	// the left of the west wall
+	for (let y = 0; y <= 1; y += STEP) {
+		vertex(0, y, 0);
+		vertex(0, y, 1);
+	}
+
+	// the right of the west wall
+	for (let y = 0; y <= 1; y += STEP) {
+		vertex(WALL_THICKNESS, y, 0);
+		vertex(WALL_THICKNESS, y, 1);
+	}
+
+	// the top of the left wall
+	for (let y = WALL_THICKNESS; y <= 1; y += STEP) {
+		vertex(0, y, 1);
+		vertex(WALL_THICKNESS, y, 1);
+	}
+
+	return new Float32Array(points);
+}
 
 /****************************************************************************
  *
@@ -271,40 +334,38 @@ void main() {
 	const fragmentShader = SHADER(gl, false)`#version 100
 precision mediump float;
 
-uniform bool lines;
-
 void main() {
-	if (lines) {
-		gl_FragColor = vec4(0, 0, 0.0, 1.0);
-	} else {
-		gl_FragColor = vec4(0.84, 0.76, 0.64, 1.0);
-	}
+	gl_FragColor = vec4(0.84, 0.76, 0.64, 1.0);
 }`;
 
-	const program = PROGRAM(gl, vertexShader, fragmentShader);
-	link(gl, program);
+	const wallData = makeWall();
 
 	const buffer = gl.createBuffer();
 	onRelease(() => void gl.deleteBuffer(buffer));
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-	gl.bufferData(gl.ARRAY_BUFFER, CUBE, gl.STATIC_DRAW);
+	gl.bufferData(gl.ARRAY_BUFFER, wallData, gl.STATIC_DRAW);
+
+	const program = PROGRAM(gl, vertexShader, fragmentShader);
+	link(gl, program);
+
+	gl.useProgram(program);
 
 	gl.enableVertexAttribArray(0);
 	gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
-	gl.useProgram(program);
-
 	const loc = gl.getUniformLocation(program, "projection");
-	const lines = gl.getUniformLocation(program, "lines");
+	// prettier-ignore
+	const camera = new Float32Array([
+		1, 0, 0, 0,
+		.1, .2, 1, 0,
+		0, 1, 0, 0,
+		0, -.5, 0, 1,
+	]);
 
-	gl.uniformMatrix4fv(loc, false, IDENTITY);
+	gl.uniformMatrix4fv(loc, false, camera);
 
-	gl.uniform1i(lines, 0);
-	gl.drawArrays(gl.TRIANGLE_STRIP, 0, CUBE.length / 3);
-
-	gl.uniform1i(lines, 1);
-	gl.drawArrays(gl.LINE_LOOP, 0, CUBE.length / 3);
+	gl.drawArrays(gl.TRIANGLE_STRIP, 0, wallData.length / 3);
 }
 
 onWindowEvent("load", () => {
