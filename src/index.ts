@@ -115,14 +115,93 @@ function runCleanup(cleanupCode: CleanupStack) {
 
 /****************************************************************************
  *
- * @file shader
+ * @file webgl
  *
  ****************************************************************************/
 
-function buildShader(gl: WebGLRenderingContext, vertexShader: boolean) {
-	const shaderEnum = vertexShader ? gl.VERTEX_SHADER : gl.FRAGMENT_SHADER;
+function SHADER(
+	gl: WebGLRenderingContext,
+	vertexShader: boolean
+): (code: TemplateStringsArray, ...args: unknown[]) => WebGLShader {
+	return (codeParts, ...args) =>
+		allocate(() => {
+			const shaderEnum = vertexShader ? gl.VERTEX_SHADER : gl.FRAGMENT_SHADER;
 
-	const shader = gl.createShader(shaderEnum);
+			const glShader =
+				gl.createShader(shaderEnum) || E(1001)`Failed to create shader`;
+
+			onRelease(() => void gl.deleteShader(glShader));
+
+			gl.shaderSource(glShader, plainLiteral(codeParts, args));
+			gl.compileShader(glShader);
+
+			gl.getShaderParameter(glShader, gl.COMPILE_STATUS) ||
+				E(1002)`Failed to compile shader: ${gl.getShaderInfoLog(glShader)}`;
+
+			return glShader;
+		});
+}
+
+function PROGRAM(
+	gl: WebGLRenderingContext,
+	vertexShader: WebGLShader,
+	fragmentShader: WebGLShader
+): WebGLProgram {
+	return allocate(() => {
+		const glProgram: WebGLProgram =
+			gl.createProgram() || E(1004)`Failed to create program`;
+
+		gl.attachShader(glProgram, vertexShader);
+		gl.attachShader(glProgram, fragmentShader);
+		onRelease(() => {
+			gl.detachShader(glProgram, fragmentShader);
+			gl.detachShader(glProgram, vertexShader);
+		});
+
+		return glProgram;
+	});
+}
+
+function link(gl: WebGLRenderingContext, glProgram: WebGLProgram) {
+	gl.linkProgram(glProgram);
+	gl.getProgramParameter(glProgram, gl.LINK_STATUS) ||
+		E(1003)`Program did not link: ${gl.getProgramInfoLog(glProgram)}`;
+}
+
+/****************************************************************************
+ *
+ * @file utils
+ *
+ ****************************************************************************/
+
+function DEBUG(code: () => void) {
+	// comment out in minified builds
+	code();
+}
+
+function E(
+	errorCode: number
+): (parts: TemplateStringsArray, ...args: unknown[]) => any {
+	// in minified builds, throw error code
+	// throw new Error(`Code ${errorCode}`);
+
+	// in dev builds
+	return (parts, ...args) => {
+		const error = new Error(plainLiteral(parts, args));
+		error.name = `E(${errorCode})`;
+		throw error;
+	};
+}
+
+function plainLiteral(parts: TemplateStringsArray, args: unknown[]): string {
+	const length = args.length;
+	if (!length) return parts[0];
+
+	const text: unknown[] = [parts[0]];
+	for (let i = 0; i < args.length; i++) {
+		text.push(args[i], parts[i + 1]);
+	}
+	return text.join("");
 }
 
 /****************************************************************************
@@ -143,16 +222,45 @@ function run() {
 	const body = document.body;
 
 	const gl = canvas?.getContext("webgl");
-	if (!gl) throw "Please update browser";
+	if (!gl) throw "Your browser needs to be updated to play this game.";
 
 	body.innerHTML = "";
 	body.appendChild(canvas);
 
-	console.log(gl.drawingBufferWidth, gl.drawingBufferHeight);
+	const vertexShader = SHADER(gl, true)`#version 100
 
-	gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-	gl.clearColor(0, 0.5, 0, 1);
-	gl.clear(gl.COLOR_BUFFER_BIT);
+precision highp float;
+
+attribute vec2 position;
+
+void main() {
+	gl_Position = vec4(position, 0.0, 1.0);
+	gl_PointSize = 128.0;
+}`;
+
+	const fragmentShader = SHADER(gl, false)`#version 100
+precision mediump float;
+
+void main() {
+	vec2 fragmentPosition = 2.0 * gl_PointCoord - 1.0;
+	float distance = length(fragmentPosition);
+	float distanceSqrd = distance * distance;
+	gl_FragColor = vec4(0.2/distanceSqrd, 0.1/distanceSqrd, 0.0, 1.0);
+}`;
+
+	const program = PROGRAM(gl, vertexShader, fragmentShader);
+	link(gl, program);
+
+	gl.enableVertexAttribArray(0);
+	const buffer = gl.createBuffer();
+	onRelease(() => void gl.deleteBuffer(buffer));
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0]), gl.STATIC_DRAW);
+	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+	gl.useProgram(program);
+	gl.drawArrays(gl.POINTS, 0, 1);
 }
 
 onWindowEvent("load", () => {
