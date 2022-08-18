@@ -372,23 +372,27 @@ function run() {
 precision highp float;
 
 attribute vec3 position;
-attribute vec3 normal;
+attribute vec3 a_normal;
 uniform mat4 projection;
 
-varying vec3 color;
+varying vec3 v_normal;
 
 void main() {
 	gl_Position = projection * vec4(position, 1);
-	color = (1.0 + normal) / 2.0;
+	v_normal = a_normal;
 }`;
 
 	const fragmentShader = SHADER(gl, false)`#version 100
 precision mediump float;
 
-varying vec3 color;
+varying vec3 v_normal;
+
+vec3 sunlight = vec3(-.3, -.8, 1);
+vec3 sandstone = vec3(0.84, 0.76, 0.64);
 
 void main() {
-	gl_FragColor = vec4(color, 1); // vec4(0.84, 0.76, 0.64, 1.0);
+	float brightness = min(1.1, 0.8 + 0.3 * dot(v_normal, sunlight));
+	gl_FragColor = vec4(brightness * sandstone, 1);
 }`;
 
 	const wall = makeWall();
@@ -407,7 +411,7 @@ void main() {
 	// gl.enable(gl.CULL_FACE);
 
 	const positionAttrib = gl.getAttribLocation(program, "position");
-	const normalAttrib = gl.getAttribLocation(program, "normal");
+	const normalAttrib = gl.getAttribLocation(program, "a_normal");
 	console.log(positionAttrib, normalAttrib);
 
 	gl.enableVertexAttribArray(positionAttrib);
@@ -420,7 +424,7 @@ void main() {
 	// prettier-ignore
 	const camera = new Float32Array([
 		1, 0, 0, 0,
-		-.2, .2, 1, 0,
+		.2, .2, 1, 0,
 		0, 1, 0, 0,
 		-.5, -.5, 0, 1,
 	]);
@@ -431,13 +435,14 @@ void main() {
 		gl.drawArrays(gl.TRIANGLE_STRIP, entity.offset, entity.length);
 	};
 
-	// drawSurface(wall.westTop);
-	// drawSurface(wall.westRight);
-	// drawSurface(wall.westLeft);
+	drawSurface(wall.westTop);
+	drawSurface(wall.westRight);
+	drawSurface(wall.westLeft);
 
-	// drawSurface(wall.columnTop);
-	// drawSurface(wall.columnFront);
-	drawSurface(wall.columnLeft);
+	drawSurface(wall.columnTop);
+	drawSurface(wall.columnFront);
+
+	// drawSurface(wall.columnLeft);
 
 	drawSurface(wall.southTop);
 	drawSurface(wall.southFront);
