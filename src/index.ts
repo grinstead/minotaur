@@ -204,6 +204,33 @@ function plainLiteral(parts: TemplateStringsArray, args: unknown[]): string {
 	return text.join("");
 }
 
+// taken from https://stackoverflow.com/a/70219726
+// prettier-ignore
+const CUBE = new Float32Array([
+  +0.5, +0.5, -0.5, // Back-top-right
+  -0.5, +0.5, -0.5, // Back-top-left
+  +0.5, -0.5, -0.5, // Back-bottom-right
+  -0.5, -0.5, -0.5, // Back-bottom-left
+  -0.5, -0.5, +0.5, // Front-bottom-left
+  -0.5, +0.5, -0.5, // Back-top-left
+  -0.5, +0.5, +0.5, // Front-top-left
+  +0.5, +0.5, -0.5, // Back-top-right
+  +0.5, +0.5, +0.5, // Front-top-right
+  +0.5, -0.5, -0.5, // Back-bottom-right
+  +0.5, -0.5, +0.5, // Front-bottom-right
+  -0.5, -0.5, +0.5, // Front-bottom-left
+  +0.5, +0.5, +0.5, // Front-top-right
+  -0.5, +0.5, +0.5, // Front-top-left
+]);
+
+// prettier-ignore
+const IDENTITY = new Float32Array([
+	1, 0, 0, 0,
+	0, 1, 0, 0,
+	.1, .5, 1, 0,
+	0, 0, 0, 1,
+]);
+
 /****************************************************************************
  *
  * @file exe
@@ -216,8 +243,11 @@ function onWindowEvent(event: string, handler: () => void) {
 
 function run() {
 	const canvas = document.createElement("canvas");
-	canvas.width = window.innerWidth;
-	canvas.height = window.innerHeight;
+
+	const width = window.innerWidth;
+	const height = window.innerHeight;
+	canvas.width = width;
+	canvas.height = height;
 
 	const body = document.body;
 
@@ -231,36 +261,50 @@ function run() {
 
 precision highp float;
 
-attribute vec2 position;
+attribute vec3 position;
+uniform mat4 projection;
 
 void main() {
-	gl_Position = vec4(position, 0.0, 1.0);
-	gl_PointSize = 128.0;
+	gl_Position = projection * vec4(position, 1);
 }`;
 
 	const fragmentShader = SHADER(gl, false)`#version 100
 precision mediump float;
 
+uniform bool lines;
+
 void main() {
-	vec2 fragmentPosition = 2.0 * gl_PointCoord - 1.0;
-	float distance = length(fragmentPosition);
-	float distanceSqrd = distance * distance;
-	gl_FragColor = vec4(0.2/distanceSqrd, 0.1/distanceSqrd, 0.0, 1.0);
+	if (lines) {
+		gl_FragColor = vec4(0, 0, 0.0, 1.0);
+	} else {
+		gl_FragColor = vec4(0.84, 0.76, 0.64, 1.0);
+	}
 }`;
 
 	const program = PROGRAM(gl, vertexShader, fragmentShader);
 	link(gl, program);
 
-	gl.enableVertexAttribArray(0);
 	const buffer = gl.createBuffer();
 	onRelease(() => void gl.deleteBuffer(buffer));
 
 	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0]), gl.STATIC_DRAW);
-	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+	gl.bufferData(gl.ARRAY_BUFFER, CUBE, gl.STATIC_DRAW);
+
+	gl.enableVertexAttribArray(0);
+	gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
 	gl.useProgram(program);
-	gl.drawArrays(gl.POINTS, 0, 1);
+
+	const loc = gl.getUniformLocation(program, "projection");
+	const lines = gl.getUniformLocation(program, "lines");
+
+	gl.uniformMatrix4fv(loc, false, IDENTITY);
+
+	gl.uniform1i(lines, 0);
+	gl.drawArrays(gl.TRIANGLE_STRIP, 0, CUBE.length / 3);
+
+	gl.uniform1i(lines, 1);
+	gl.drawArrays(gl.LINE_LOOP, 0, CUBE.length / 3);
 }
 
 onWindowEvent("load", () => {
