@@ -408,7 +408,6 @@ void main() {
 
 	gl.useProgram(program);
 	gl.enable(gl.DEPTH_TEST);
-	// gl.enable(gl.CULL_FACE);
 
 	const positionAttrib = gl.getAttribLocation(program, "position");
 	const normalAttrib = gl.getAttribLocation(program, "a_normal");
@@ -423,10 +422,10 @@ void main() {
 	const loc = gl.getUniformLocation(program, "projection");
 	// prettier-ignore
 	const camera = new Float32Array([
-		1, 0, 0, 0,
-		.2, .2, 1, 0,
-		0, 1, 0, 0,
-		-.5, -.5, 0, 1,
+		+1.0, +0.0, +0.0, +0.0,
+		+0.2, +0.2, +1.0, +0.0,
+		+0.0, +0.6, +0.0, +0.0,
+		-0.5, -0.5, +0.0, +1.0,
 	]);
 
 	gl.uniformMatrix4fv(loc, false, camera);
