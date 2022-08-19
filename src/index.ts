@@ -401,11 +401,12 @@ precision highp float;
 attribute vec3 position;
 attribute vec3 a_normal;
 uniform mat4 projection;
+uniform vec3 major_position;
 
 varying vec3 v_normal;
 
 void main() {
-	gl_Position = projection * vec4(position, 1);
+	gl_Position = projection * vec4(position + major_position, 1);
 	v_normal = a_normal;
 }`;
 
@@ -450,13 +451,15 @@ void main() {
 	const loc = gl.getUniformLocation(program, "projection");
 	// prettier-ignore
 	const camera = new Float32Array([
-		+1.0, +0.0, +0.0, +0.0,
-		-0.2, +0.2, +0.1, +0.0,
-		+0.0, +0.6, +0.0, +0.0,
+		+0.1, +0.0, +0.0, +0.0,
+		-0.05, +0.1, 1 / 16, +0.0,
+		+0.0, +0.1, +0.0, +0.0,
 		-0.5, -0.5, +0.0, +1.0,
 	]);
 
 	gl.uniformMatrix4fv(loc, false, camera);
+
+	const majorPositionAttrib = gl.getUniformLocation(program, "major_position");
 
 	const drawBlock = (block: Block) => {
 		block.forEach((surface) => {
@@ -464,9 +467,16 @@ void main() {
 		});
 	};
 
-	drawBlock(wall.west);
-	drawBlock(wall.column);
-	drawBlock(wall.south);
+	for (let x = -10; x <= 30; x++) {
+		for (let y = -10; y <= 30; y++) {
+			gl.uniform3f(majorPositionAttrib, x, y, 0);
+			const bla = Math.floor(Math.random() * 4);
+
+			(bla & 1) && drawBlock(wall.west);
+			drawBlock(wall.column);
+			(bla & 2) && drawBlock(wall.south);
+		}
+	}
 }
 
 onWindowEvent("load", () => {
