@@ -244,11 +244,11 @@ const IDENTITY = new Float32Array([
 	0, 0, 0, 1,
 ]);
 
-function shuffled<T>(array: T[]): T[] {
+function shuffledForEach<T>(array: T[], code: (element: T, index: number) => unknown) {
 	const indices = array.map((_, i) => i);
 	const rand = array.map(() => Math.random());
 	indices.sort((a, b) => rand[a] - rand[b]);
-	return indices.map((i) => array[i]);
+	indices.forEach((originalIndex, i) => code(array[originalIndex], i));
 }
 
 /****************************************************************************
@@ -445,7 +445,7 @@ function makeMaze(): number[] {
 	// open a hallway/gate at the bottom
 	maze[HALF] &= 1;
 
-	shuffled(connectionsToCheck).forEach((connection) => {
+	shuffledForEach(connectionsToCheck, (connection) => {
 		const index = connection >> 1;
 
 		if (connection & 1) {
