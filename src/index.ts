@@ -394,12 +394,15 @@ function makeMaze(): number[] {
 		unionFind.push(-1);
 	}
 
+	// connection will be the index concatenated onto a bool for checking west
 	const connectionsToCheck: number[] = [];
+
 	unionFind.forEach((_, i) => {
-		connectionsToCheck.push(i << 1);
+		connectionsToCheck.push((i << 1));
 
 		const x = i % MAZE_SIDE;
 
+		// if we are not in the final hallway, also consider opening the west wall
 		if (
 			!((x === HALF || x === HALF + 1) && i < END_HALLWAY_LENGTH * MAZE_SIDE)
 		) {
@@ -448,14 +451,16 @@ function makeMaze(): number[] {
 		if (connection & 1) {
 			// test if we connect to the block to the left, but do nothing if we are
 			// are the left-most
-			if (index % MAZE_SIDE !== 0 && unionIfDisconnected(index, index - 1)) {
+			const isLeftmost = !(index % MAZE_SIDE);
+			if (!isLeftmost && unionIfDisconnected(index, index - 1)) {
 				// subtracts out the left-facing bit
-				maze[index] &= 2;
+				maze[index] &= ~BLOCKS_WEST;
 			}
 		} else {
-			if (index >= MAZE_SIDE && unionIfDisconnected(index, index - MAZE_SIDE)) {
+			const isBottom = index < MAZE_SIDE;
+			if (!isBottom && unionIfDisconnected(index, index - MAZE_SIDE)) {
 				// subtracts out the bottom-facing bit
-				maze[index] &= 1;
+				maze[index] &= ~BLOCKS_SOUTH;
 			}
 		}
 	});
@@ -545,13 +550,18 @@ void main() {
 	gl.enableVertexAttribArray(normalAttrib);
 	gl.vertexAttribPointer(normalAttrib, 3, gl.FLOAT, false, 24, 12);
 
+	const cameraX = 0;
+	const cameraY = 0;
+	const xScale = 2 * pxPerBlock / width;
+	const yScale = 2 * pxPerBlock / height;
+
 	const loc = gl.getUniformLocation(program, "projection");
 	// prettier-ignore
 	const camera = new Float32Array([
-		2 * pxPerBlock / width, +0.0, +0.0, +0.0,
-		0, 2 * pxPerBlock / height, 1 / 32, +0.0,
-		0, 0, +0.0, +0.0,
-		0, 0, +0.0, +1.0,
+		xScale, 0, +0.0, +0.0,
+		0, yScale, 1 / 32, +0.0,
+		0, yScale / 2, +0.0, +0.0,
+		-(cameraX * xScale), -(cameraY * yScale), +0.0, +1.0,
 	]);
 
 	gl.uniformMatrix4fv(loc, false, camera);
