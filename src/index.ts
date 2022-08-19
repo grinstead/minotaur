@@ -6,6 +6,8 @@
 
 const WALL_THICKNESS = 1 / 4;
 const DETAIL = 1; // make this bigger to get more curve
+const MAZE_SIDE = 41; // must be odd
+const END_HALLWAY_LENGTH = 6;
 
 /****************************************************************************
  *
@@ -393,8 +395,6 @@ function run() {
 	canvas.width = width;
 	canvas.height = height;
 
-	const MAZE_SIDE = 31;
-
 	const pxPerBlock = Math.floor((0.875 * Math.min(width, height)) / MAZE_SIDE);
 
 	const body = document.body;
@@ -483,9 +483,19 @@ void main() {
 		unionFind.push(-1);
 	}
 
+	const HALF = MAZE_SIDE >> 1;
+
 	const connectionsToCheck: number[] = [];
 	unionFind.forEach((_, i) => {
-		connectionsToCheck.push(i << 1, (i << 1) | 1);
+		connectionsToCheck.push(i << 1);
+
+		const x = i % MAZE_SIDE;
+
+		if (
+			!((x === HALF || x === HALF + 1) && i < END_HALLWAY_LENGTH * MAZE_SIDE)
+		) {
+			connectionsToCheck.push((i << 1) | 1);
+		}
 	});
 
 	const maze: number[] = unionFind.map(() => 3);
@@ -520,6 +530,9 @@ void main() {
 		return true;
 	};
 
+	// open a hallway/gate at the bottom
+	maze[HALF] &= 1;
+
 	shuffled(connectionsToCheck).forEach((connection) => {
 		const index = connection >> 1;
 
@@ -537,8 +550,6 @@ void main() {
 			}
 		}
 	});
-
-	const HALF = MAZE_SIDE >> 1;
 
 	// draw the maze
 	maze.forEach((connections, index) => {
