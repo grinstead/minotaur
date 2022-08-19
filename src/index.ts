@@ -251,65 +251,105 @@ type EntityRange = {
 	length: number;
 };
 
+type Block = EntityRange[];
+
 function makeWall() {
 	const STEP = WALL_THICKNESS / DETAIL;
 
-	let normal: number[] = [0, -1, 0];
 	const points: number[] = [];
-
-	let entity: EntityRange = { offset: 0, length: 0 };
-	const finishEntity = () => {
-		const prior = entity;
-		const offset = points.length / 6;
-		prior.length = offset - prior.offset;
-
-		entity = { offset: points.length / 6, length: 0 };
-
-		return prior;
-	};
-	const portionColumn = (fullWall: EntityRange) => {
-		return {
-			offset: fullWall.offset,
-			length: 2 + (fullWall.length - 2) * WALL_THICKNESS,
-		};
-	};
+	let index = 0;
 
 	const vertex = (x: number, y: number, z: number) => {
+		index++;
 		points.push(x, y, z, ...normal);
 	};
 
-	// the south wall
+	const column: Block = [];
+	const south: Block = [];
+	const west: Block = [];
+
+	let surfaceStartIndex = 0;
+	const finishSurface = (block: Block) => {
+		// push the wall-face into the wall
+		block.push({
+			offset: surfaceStartIndex,
+			length: index - surfaceStartIndex,
+		});
+
+		// restart the surface
+		surfaceStartIndex = index;
+	};
+
+	// assumes that we built the full wall and we chop off WALL_THICKNESS
+	// percent for the column
+	const portionColumn = () => {
+		const length = 2 + (index - surfaceStartIndex - 2) * WALL_THICKNESS;
+
+		column.push({ offset: surfaceStartIndex, length });
+
+		// subtract 2 because they share two points
+		surfaceStartIndex += length - 2;
+	};
+
+	let normal: number[] = [0, -1, 0];
+
+	// the front south wall
 	for (let x = 0; x <= 1; x += STEP) {
-		vertex(x, 0, 0);
 		vertex(x, 0, 1);
+		vertex(x, 0, 0);
 	}
-	const southFront = finishEntity();
-	const columnFront = portionColumn(southFront);
+	portionColumn();
+	finishSurface(south);
+
+	// the back of the south wall
+	normal = [0, 1, 0];
+	for (let x = 0; x <= 1; x += STEP) {
+		vertex(x, WALL_THICKNESS, 0);
+		vertex(x, WALL_THICKNESS, 1);
+	}
+	portionColumn();
+	finishSurface(south);
+
+	// the back of the west wall
+	normal = [0, 1, 0];
+	for (let x = 0; x <= WALL_THICKNESS; x += STEP) {
+		vertex(x, 1, 0);
+		vertex(x, 1, 1);
+	}
+	finishSurface(west);
 
 	// the top of the south wall
 	// (this does not work with the DETAIL stuff)
 	normal = [0, 0, 1];
 	for (let x = 0; x <= 1; x += STEP) {
-		vertex(x, 0, 1);
 		vertex(x, WALL_THICKNESS, 1);
+		vertex(x, 0, 1);
 	}
-	const southTop = finishEntity();
-	const columnTop = portionColumn(southTop);
+	portionColumn();
+	finishSurface(south);
+
+	// the top of the west wall
+	for (let y = WALL_THICKNESS; y <= 1; y += STEP) {
+		vertex(0, y, 1);
+		vertex(WALL_THICKNESS, y, 1);
+	}
+	finishSurface(west);
 
 	// the right of the south wall
 	normal = [1, 0, 0];
-	vertex(1, 0, 0);
-	vertex(1, 0, 1);
-	vertex(1, WALL_THICKNESS, 0);
-	vertex(1, WALL_THICKNESS, 1);
-	const southRight = finishEntity();
+	for (let y = 0; y <= WALL_THICKNESS; y += STEP) {
+		vertex(1, y, 1);
+		vertex(1, y, 0);
+	}
+	finishSurface(south);
 
 	// the right of the west wall
 	for (let y = 0; y <= 1; y += STEP) {
-		vertex(WALL_THICKNESS, y, 0);
 		vertex(WALL_THICKNESS, y, 1);
+		vertex(WALL_THICKNESS, y, 0);
 	}
-	const westRight = finishEntity();
+	portionColumn();
+	finishSurface(west);
 
 	// the left of the west wall
 	normal = [-1, 0, 0];
@@ -317,26 +357,13 @@ function makeWall() {
 		vertex(0, y, 0);
 		vertex(0, y, 1);
 	}
-	const westLeft = finishEntity();
-	const columnLeft = portionColumn(westLeft);
-
-	normal = [0, 0, 1];
-	for (let y = WALL_THICKNESS; y <= 1; y += STEP) {
-		vertex(0, y, 1);
-		vertex(WALL_THICKNESS, y, 1);
-	}
-	const westTop = finishEntity();
+	portionColumn();
+	finishSurface(west);
 
 	return {
-		southFront,
-		southTop,
-		southRight,
-		westRight,
-		westLeft,
-		westTop,
-		columnTop,
-		columnFront,
-		columnLeft,
+		south,
+		west,
+		column,
 		rawData: new Float32Array(points),
 	};
 }
@@ -408,6 +435,7 @@ void main() {
 
 	gl.useProgram(program);
 	gl.enable(gl.DEPTH_TEST);
+	gl.enable(gl.CULL_FACE);
 
 	const positionAttrib = gl.getAttribLocation(program, "position");
 	const normalAttrib = gl.getAttribLocation(program, "a_normal");
@@ -423,29 +451,22 @@ void main() {
 	// prettier-ignore
 	const camera = new Float32Array([
 		+1.0, +0.0, +0.0, +0.0,
-		+0.2, +0.2, +1.0, +0.0,
+		-0.2, +0.2, +0.1, +0.0,
 		+0.0, +0.6, +0.0, +0.0,
 		-0.5, -0.5, +0.0, +1.0,
 	]);
 
 	gl.uniformMatrix4fv(loc, false, camera);
 
-	const drawSurface = (entity: EntityRange) => {
-		gl.drawArrays(gl.TRIANGLE_STRIP, entity.offset, entity.length);
+	const drawBlock = (block: Block) => {
+		block.forEach((surface) => {
+			gl.drawArrays(gl.TRIANGLE_STRIP, surface.offset, surface.length);
+		});
 	};
 
-	drawSurface(wall.westTop);
-	drawSurface(wall.westRight);
-	drawSurface(wall.westLeft);
-
-	drawSurface(wall.columnTop);
-	drawSurface(wall.columnFront);
-
-	// drawSurface(wall.columnLeft);
-
-	drawSurface(wall.southTop);
-	drawSurface(wall.southFront);
-	drawSurface(wall.southRight);
+	drawBlock(wall.west);
+	drawBlock(wall.column);
+	drawBlock(wall.south);
 }
 
 onWindowEvent("load", () => {
