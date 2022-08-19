@@ -9,6 +9,8 @@ const DETAIL = 1; // make this bigger to get more curve
 const MAZE_SIDE = 41; // must be odd
 const END_HALLWAY_LENGTH = 6;
 
+const HALF = MAZE_SIDE >> 1;
+
 /****************************************************************************
  *
  * @file raii
@@ -379,111 +381,18 @@ function makeWall() {
 
 /****************************************************************************
  *
- * @file exe
+ * @file maze generation
  *
  ****************************************************************************/
 
-function onWindowEvent(event: string, handler: () => void) {
-	window.addEventListener(event, handler);
-}
+const BLOCKS_WEST = 1 << 0;
+const BLOCKS_SOUTH = 1 << 1;
 
-function run() {
-	const canvas = document.createElement("canvas");
-
-	const width = window.innerWidth;
-	const height = window.innerHeight;
-	canvas.width = width;
-	canvas.height = height;
-
-	const pxPerBlock = Math.floor((0.875 * Math.min(width, height)) / MAZE_SIDE);
-
-	const body = document.body;
-
-	const gl = canvas?.getContext("webgl");
-	if (!gl) throw "Your browser needs to be updated to play this game.";
-
-	body.innerHTML = "";
-	body.appendChild(canvas);
-
-	const vertexShader = SHADER(gl, true)`#version 100
-
-precision highp float;
-
-attribute vec3 position;
-attribute vec3 a_normal;
-uniform mat4 projection;
-uniform vec3 major_position;
-
-varying vec3 v_normal;
-
-void main() {
-	gl_Position = projection * vec4(position + major_position, 1);
-	v_normal = a_normal;
-}`;
-
-	const fragmentShader = SHADER(gl, false)`#version 100
-precision mediump float;
-
-varying vec3 v_normal;
-
-vec3 sunlight = vec3(-.3, -.8, 1);
-vec3 sandstone = vec3(0.84, 0.76, 0.64);
-
-void main() {
-	float brightness = min(1.1, 0.8 + 0.3 * dot(v_normal, sunlight));
-	gl_FragColor = vec4(brightness * sandstone, 1);
-}`;
-
-	const wall = makeWall();
-
-	const buffer = gl.createBuffer();
-	onRelease(() => void gl.deleteBuffer(buffer));
-
-	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-	gl.bufferData(gl.ARRAY_BUFFER, wall.rawData, gl.STATIC_DRAW);
-
-	const program = PROGRAM(gl, vertexShader, fragmentShader);
-	link(gl, program);
-
-	gl.useProgram(program);
-	gl.enable(gl.DEPTH_TEST);
-	gl.enable(gl.CULL_FACE);
-
-	const positionAttrib = gl.getAttribLocation(program, "position");
-	const normalAttrib = gl.getAttribLocation(program, "a_normal");
-	console.log(positionAttrib, normalAttrib);
-
-	gl.enableVertexAttribArray(positionAttrib);
-	gl.vertexAttribPointer(positionAttrib, 3, gl.FLOAT, false, 24, 0);
-
-	gl.enableVertexAttribArray(normalAttrib);
-	gl.vertexAttribPointer(normalAttrib, 3, gl.FLOAT, false, 24, 12);
-
-	const loc = gl.getUniformLocation(program, "projection");
-	// prettier-ignore
-	const camera = new Float32Array([
-		2 * pxPerBlock / width, +0.0, +0.0, +0.0,
-		0, 2 * pxPerBlock / height, 1 / 32, +0.0,
-		0, 0, +0.0, +0.0,
-		0, 0, +0.0, +1.0,
-	]);
-
-	gl.uniformMatrix4fv(loc, false, camera);
-
-	const majorPositionAttrib = gl.getUniformLocation(program, "major_position");
-
-	const drawBlock = (block: Block) => {
-		block.forEach((surface) => {
-			gl.drawArrays(gl.TRIANGLE_STRIP, surface.offset, surface.length);
-		});
-	};
-
+function makeMaze(): number[] {
 	const unionFind: number[] = [];
 	for (let i = 0; i < MAZE_SIDE * MAZE_SIDE; i++) {
 		unionFind.push(-1);
 	}
-
-	const HALF = MAZE_SIDE >> 1;
 
 	const connectionsToCheck: number[] = [];
 	unionFind.forEach((_, i) => {
@@ -550,6 +459,110 @@ void main() {
 			}
 		}
 	});
+
+	return maze;
+}
+
+/****************************************************************************
+ *
+ * @file exe
+ *
+ ****************************************************************************/
+
+function onWindowEvent(event: string, handler: () => void) {
+	window.addEventListener(event, handler);
+}
+
+function run() {
+	const canvas = document.createElement("canvas");
+
+	const width = window.innerWidth;
+	const height = window.innerHeight;
+	canvas.width = width;
+	canvas.height = height;
+
+	const pxPerBlock = Math.floor((0.875 * Math.min(width, height)) / MAZE_SIDE);
+
+	const body = document.body;
+
+	const gl = canvas?.getContext("webgl");
+	if (!gl) throw "Your browser needs to be updated to play this game.";
+
+	body.innerHTML = "";
+	body.appendChild(canvas);
+
+	const vertexShader = SHADER(gl, true)`#version 100
+precision highp float;
+
+attribute vec3 position;
+attribute vec3 a_normal;
+uniform mat4 projection;
+uniform vec3 major_position;
+
+varying vec3 v_normal;
+
+void main() {
+	gl_Position = projection * vec4(position + major_position, 1);
+	v_normal = a_normal;
+}`;
+
+	const fragmentShader = SHADER(gl, false)`#version 100
+precision mediump float;
+
+varying vec3 v_normal;
+
+vec3 sunlight = vec3(-.3, -.8, 1);
+vec3 sandstone = vec3(0.84, 0.76, 0.64);
+
+void main() {
+	float brightness = min(1.1, 0.8 + 0.3 * dot(v_normal, sunlight));
+	gl_FragColor = vec4(brightness * sandstone, 1);
+}`;
+
+	const wall = makeWall();
+	const maze = makeMaze();
+
+	const buffer = gl.createBuffer();
+	onRelease(() => void gl.deleteBuffer(buffer));
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+	gl.bufferData(gl.ARRAY_BUFFER, wall.rawData, gl.STATIC_DRAW);
+
+	const program = PROGRAM(gl, vertexShader, fragmentShader);
+	link(gl, program);
+
+	gl.useProgram(program);
+	gl.enable(gl.DEPTH_TEST);
+	gl.enable(gl.CULL_FACE);
+
+	const positionAttrib = gl.getAttribLocation(program, "position");
+	const normalAttrib = gl.getAttribLocation(program, "a_normal");
+	console.log(positionAttrib, normalAttrib);
+
+	gl.enableVertexAttribArray(positionAttrib);
+	gl.vertexAttribPointer(positionAttrib, 3, gl.FLOAT, false, 24, 0);
+
+	gl.enableVertexAttribArray(normalAttrib);
+	gl.vertexAttribPointer(normalAttrib, 3, gl.FLOAT, false, 24, 12);
+
+	const loc = gl.getUniformLocation(program, "projection");
+	// prettier-ignore
+	const camera = new Float32Array([
+		2 * pxPerBlock / width, +0.0, +0.0, +0.0,
+		0, 2 * pxPerBlock / height, 1 / 32, +0.0,
+		0, 0, +0.0, +0.0,
+		0, 0, +0.0, +1.0,
+	]);
+
+	gl.uniformMatrix4fv(loc, false, camera);
+
+	const majorPositionAttrib = gl.getUniformLocation(program, "major_position");
+
+	const drawBlock = (block: Block) => {
+		block.forEach((surface) => {
+			gl.drawArrays(gl.TRIANGLE_STRIP, surface.offset, surface.length);
+		});
+	};
 
 	// draw the maze
 	maze.forEach((connections, index) => {
