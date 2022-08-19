@@ -240,6 +240,13 @@ const IDENTITY = new Float32Array([
 	0, 0, 0, 1,
 ]);
 
+function shuffled<T>(array: T[]): T[] {
+	const indices = array.map((_, i) => i);
+	const rand = array.map(() => Math.random());
+	indices.sort((a, b) => rand[a] - rand[b]);
+	return indices.map((i) => array[i]);
+}
+
 /****************************************************************************
  *
  * @file game geometry
@@ -388,7 +395,7 @@ function run() {
 
 	const MAZE_SIDE = 31;
 
-	const pxPerBlock = Math.floor(.875 * Math.min(width, height) / MAZE_SIDE);
+	const pxPerBlock = Math.floor((0.875 * Math.min(width, height)) / MAZE_SIDE);
 
 	const body = document.body;
 
@@ -456,7 +463,7 @@ void main() {
 	// prettier-ignore
 	const camera = new Float32Array([
 		2 * pxPerBlock / width, +0.0, +0.0, +0.0,
-		0, 2 * pxPerBlock / height, 1 / 16, +0.0,
+		0, 2 * pxPerBlock / height, 1 / 32, +0.0,
 		0, 0, +0.0, +0.0,
 		0, 0, +0.0, +1.0,
 	]);
@@ -471,17 +478,93 @@ void main() {
 		});
 	};
 
-	const HALF = MAZE_SIDE >> 1;
-	for (let x = -HALF; x <= HALF; x++) {
-		for (let y = -HALF; y <= HALF; y++) {
-			gl.uniform3f(majorPositionAttrib, x, y, 0);
-			const bla = Math.floor(Math.random() * 4);
-
-			(bla & 1) && drawBlock(wall.west);
-			drawBlock(wall.column);
-			(bla & 2) && drawBlock(wall.south);
-		}
+	const unionFind: number[] = [];
+	for (let i = 0; i < MAZE_SIDE * MAZE_SIDE; i++) {
+		unionFind.push(-1);
 	}
+
+	const connectionsToCheck: number[] = [];
+	unionFind.forEach((_, i) => {
+		connectionsToCheck.push(i << 1, (i << 1) | 1);
+	});
+
+	const maze: number[] = unionFind.map(() => 3);
+
+	const rootOf = (index: number): number => {
+		const parent = unionFind[index];
+		if (parent < 0) {
+			return index;
+		} else {
+			return (unionFind[index] = rootOf(parent));
+		}
+	};
+
+	const unionIfDisconnected = (aIndex: number, bIndex: number) => {
+		const a = rootOf(aIndex);
+		const b = rootOf(bIndex);
+
+		// if they have the same root, nothing to do
+		if (a === b) return false;
+
+		const aNegSize = unionFind[a];
+		const bNegSize = unionFind[b];
+
+		if (aNegSize < bNegSize) {
+			unionFind[a] = aNegSize + bNegSize;
+			unionFind[b] = a;
+		} else {
+			unionFind[a] = b;
+			unionFind[b] = aNegSize + bNegSize;
+		}
+
+		return true;
+	};
+
+	shuffled(connectionsToCheck).forEach((connection) => {
+		const index = connection >> 1;
+
+		if (connection & 1) {
+			// test if we connect to the block to the left, but do nothing if we are
+			// are the left-most
+			if (index % MAZE_SIDE !== 0 && unionIfDisconnected(index, index - 1)) {
+				// subtracts out the left-facing bit
+				maze[index] &= 2;
+			}
+		} else {
+			if (index >= MAZE_SIDE && unionIfDisconnected(index, index - MAZE_SIDE)) {
+				// subtracts out the bottom-facing bit
+				maze[index] &= 1;
+			}
+		}
+	});
+
+	const HALF = MAZE_SIDE >> 1;
+
+	// draw the maze
+	maze.forEach((connections, index) => {
+		const x = index % MAZE_SIDE;
+		const y = Math.floor(index / MAZE_SIDE);
+
+		gl.uniform3f(majorPositionAttrib, x - HALF, y - HALF, 0);
+
+		connections & 1 && drawBlock(wall.west);
+		drawBlock(wall.column);
+		connections & 2 && drawBlock(wall.south);
+	});
+
+	// draw the north and east walls
+	for (let d = -HALF; d <= HALF; d++) {
+		gl.uniform3f(majorPositionAttrib, d, HALF + 1, 0);
+		drawBlock(wall.south);
+		drawBlock(wall.column);
+
+		gl.uniform3f(majorPositionAttrib, HALF + 1, d, 0);
+		drawBlock(wall.west);
+		drawBlock(wall.column);
+	}
+
+	gl.uniform3f(majorPositionAttrib, HALF + 1, HALF + 1, 0);
+	drawBlock(wall.column);
 }
 
 onWindowEvent("load", () => {
