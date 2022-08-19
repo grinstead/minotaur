@@ -194,14 +194,14 @@ function E(
 	errorCode: number
 ): (parts: TemplateStringsArray, ...args: unknown[]) => any {
 	// in minified builds, throw error code
-	// throw new Error(`Code ${errorCode}`);
+	throw new Error(`Code ${errorCode}`);
 
 	// in dev builds
-	return (parts, ...args) => {
-		const error = new Error(plainLiteral(parts, args));
-		error.name = `E(${errorCode})`;
-		throw error;
-	};
+	// return (parts, ...args) => {
+	// 	const error = new Error(plainLiteral(parts, args));
+	// 	error.name = `E(${errorCode})`;
+	// 	throw error;
+	// };
 }
 
 function plainLiteral(parts: TemplateStringsArray, args: unknown[]): string {

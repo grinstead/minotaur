@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "build": "npx tsc",
+    "watch": "npx tsc --watch",
+    "minify": "npm run build && npx google-closure-compiler --compilation_level=ADVANCED_OPTIMIZATIONS --js=bin/index.js --js_output_file=bin/minified.js"
+  },
   "devDependencies": {
+    "google-closure-compiler": "^20220803.0.0",
     "prettier": "^2.7.1",
     "typescript": "^4.7.4"
   }

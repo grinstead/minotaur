@@ -10,21 +10,6 @@
 			right: 0;
 		}
 	</style>
-	<script type="text/javascript">
-		define = (function() {
-			const modules = new Map();
-
-			function require(name) {
-				return modules.get(name)
-			}
-
-			function define(name, _, module) {
-				modules.set(name, {module, exports: null});
-			}
-
-			return define;
-		})()
-	</script>
 	<script type="text/javascript" src="bin/index.js"></script>
 </head>
 <body>Loading...</body>
