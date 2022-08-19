@@ -386,6 +386,10 @@ function run() {
 	canvas.width = width;
 	canvas.height = height;
 
+	const MAZE_SIDE = 31;
+
+	const pxPerBlock = Math.floor(.875 * Math.min(width, height) / MAZE_SIDE);
+
 	const body = document.body;
 
 	const gl = canvas?.getContext("webgl");
@@ -451,10 +455,10 @@ void main() {
 	const loc = gl.getUniformLocation(program, "projection");
 	// prettier-ignore
 	const camera = new Float32Array([
-		+0.1, +0.0, +0.0, +0.0,
-		-0.05, +0.1, 1 / 16, +0.0,
-		+0.0, +0.1, +0.0, +0.0,
-		-0.5, -0.5, +0.0, +1.0,
+		2 * pxPerBlock / width, +0.0, +0.0, +0.0,
+		0, 2 * pxPerBlock / height, 1 / 16, +0.0,
+		0, 0, +0.0, +0.0,
+		0, 0, +0.0, +1.0,
 	]);
 
 	gl.uniformMatrix4fv(loc, false, camera);
@@ -467,8 +471,9 @@ void main() {
 		});
 	};
 
-	for (let x = -10; x <= 30; x++) {
-		for (let y = -10; y <= 30; y++) {
+	const HALF = MAZE_SIDE >> 1;
+	for (let x = -HALF; x <= HALF; x++) {
+		for (let y = -HALF; y <= HALF; y++) {
 			gl.uniform3f(majorPositionAttrib, x, y, 0);
 			const bla = Math.floor(Math.random() * 4);
 
