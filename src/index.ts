@@ -5,6 +5,8 @@
  ****************************************************************************/
 
 const WALL_THICKNESS = 1 / 4;
+const PLAYER_SIDE = 1 / 4;
+
 const DETAIL = 1; // make this bigger to get more curve
 const MAZE_SIDE = 41; // must be odd
 const END_HALLWAY_LENGTH = 6;
@@ -262,6 +264,12 @@ function clamp(number: number, min: number, max: number) {
 function pressed(key: string): 0 | 1 {
 	return activeKeys.has(key) ? 1 : 0;
 }
+
+/****************************************************************************
+ *
+ * @file collisions
+ *
+ ****************************************************************************/
 
 /****************************************************************************
  *
@@ -669,7 +677,7 @@ function render(info: GameInfo) {
 
 	const cameraMatrix = pipe(
 		IDENTITY,
-		shiftAxes(-player.pos.x, -player.pos.y, -HEAD_HEIGHT),
+		shiftAxes(-player.pos.x, -player.pos.y, pressed(" ") * -5 - HEAD_HEIGHT),
 		rotateAboutZ(player.facing),
 		rotateAboutX(player.pitch),
 		shiftAxes(0, -1, 0),
@@ -820,7 +828,7 @@ void main() {
 		game.frameTime = time;
 		game.gameTime += dt;
 
-		const forward = pressed("w");
+		const forward = pressed("w") - pressed("s");
 		const strafing = pressed("d") - pressed("a");
 
 		if (forward || strafing) {
@@ -829,7 +837,13 @@ void main() {
 
 			// dividing by 1 + forward is a clever way to divide the
 			// angle in half when forward is pressed.
-			const angle = (strafing * (Math.PI / 2)) / (1 + forward);
+			let angle = strafing * (Math.PI / 2);
+			if (forward) {
+				angle /= 2;
+				if (forward < 0) {
+					angle = Math.PI - angle;
+				}
+			}
 
 			game.player.pos = {
 				x: pos.x + Math.sin(facing + angle) * distance,
