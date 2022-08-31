@@ -616,12 +616,14 @@ function render(info: GameInfo) {
 		0, 0, 0, 1,
 	);
 
+	const scale = Math.min(dim.width, dim.height);
+
 	const cameraMatrix = pipe(
 		IDENTITY,
-		shiftAxes(-camera.x, -camera.y, -2),
+		shiftAxes(-camera.x, -camera.y, -0.8),
 		APPLY_DEPTH,
 		SWAP_Y_AND_Z,
-		scaleAxes(1, 1, 1 / MAZE_SIDE)
+		scaleAxes(scale / dim.width, scale / dim.height, 1 / MAZE_SIDE)
 	);
 
 	gl.uniformMatrix4fv(uniform.projection, false, cameraMatrix);
