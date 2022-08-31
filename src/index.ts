@@ -11,6 +11,13 @@ const END_HALLWAY_LENGTH = 6;
 
 const HALF = MAZE_SIDE >> 1;
 
+type Camera = {
+	x: number;
+	y: number;
+}
+
+let camera: Camera = { x: 0.5, y: 0.5 };
+
 /****************************************************************************
  *
  * @file raii
@@ -244,7 +251,10 @@ const IDENTITY = new Float32Array([
 	0, 0, 0, 1,
 ]);
 
-function shuffledForEach<T>(array: T[], code: (element: T, index: number) => unknown) {
+function shuffledForEach<T>(
+	array: T[],
+	code: (element: T, index: number) => unknown
+) {
 	const indices = array.map((_, i) => i);
 	const rand = array.map(() => Math.random());
 	indices.sort((a, b) => rand[a] - rand[b]);
@@ -398,7 +408,7 @@ function makeMaze(): number[] {
 	const connectionsToCheck: number[] = [];
 
 	unionFind.forEach((_, i) => {
-		connectionsToCheck.push((i << 1));
+		connectionsToCheck.push(i << 1);
 
 		const x = i % MAZE_SIDE;
 
@@ -470,11 +480,35 @@ function makeMaze(): number[] {
 
 /****************************************************************************
  *
+ * @file rendering
+ *
+ ****************************************************************************/
+
+type WebGLAttribute = number;
+
+type RenderInfo = {
+	gl: WebGLRenderingContext;
+	wallProgram: WebGLProgram;
+	attributes: {
+		normal: WebGLAttribute;
+		position: WebGLAttribute;
+	};
+	uniform: {
+		majorPosition: WebGLUniformLocation;
+	}
+};
+
+function render() {
+
+}
+
+/****************************************************************************
+ *
  * @file exe
  *
  ****************************************************************************/
 
-function onWindowEvent(event: string, handler: () => void) {
+function onWindowEvent(event: string, handler: (e: unknown) => void) {
 	window.addEventListener(event, handler);
 }
 
@@ -495,6 +529,8 @@ function run() {
 
 	body.innerHTML = "";
 	body.appendChild(canvas);
+
+	canvas.addEventListener("click", startOnClick);
 
 	const vertexShader = SHADER(gl, true)`#version 100
 precision highp float;
@@ -533,40 +569,46 @@ void main() {
 	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 	gl.bufferData(gl.ARRAY_BUFFER, wall.rawData, gl.STATIC_DRAW);
 
-	const program = PROGRAM(gl, vertexShader, fragmentShader);
-	link(gl, program);
+	const wallProgram = PROGRAM(gl, vertexShader, fragmentShader);
+	link(gl, wallProgram);
 
-	gl.useProgram(program);
+	gl.useProgram(wallProgram);
 	gl.enable(gl.DEPTH_TEST);
 	gl.enable(gl.CULL_FACE);
 
-	const positionAttrib = gl.getAttribLocation(program, "position");
-	const normalAttrib = gl.getAttribLocation(program, "a_normal");
-	console.log(positionAttrib, normalAttrib);
+	const renderInfo: RenderInfo = {
+		gl,
+		wallProgram,
+		attributes: {
+			position: gl.getAttribLocation(wallProgram, "position"),
+			normal: gl.getAttribLocation(wallProgram, "a_normal"),
+		},
+		uniform: {
+			majorPosition: gl.getUniformLocation(wallProgram, "major_position") || E(1005)`Missing uniform attribute`,
+		},
+	};
 
-	gl.enableVertexAttribArray(positionAttrib);
-	gl.vertexAttribPointer(positionAttrib, 3, gl.FLOAT, false, 24, 0);
+	gl.enableVertexAttribArray(renderInfo.attributes.position);
+	gl.vertexAttribPointer(renderInfo.attributes.position, 3, gl.FLOAT, false, 24, 0);
 
-	gl.enableVertexAttribArray(normalAttrib);
-	gl.vertexAttribPointer(normalAttrib, 3, gl.FLOAT, false, 24, 12);
+	gl.enableVertexAttribArray(renderInfo.attributes.normal);
+	gl.vertexAttribPointer(renderInfo.attributes.normal, 3, gl.FLOAT, false, 24, 12);
 
 	const cameraX = 0;
 	const cameraY = 0;
-	const xScale = 2 * pxPerBlock / width;
-	const yScale = 2 * pxPerBlock / height;
+	const xScale = (2 * pxPerBlock) / width;
+	const yScale = (2 * pxPerBlock) / height;
 
-	const loc = gl.getUniformLocation(program, "projection");
+	const loc = gl.getUniformLocation(wallProgram, "projection");
 	// prettier-ignore
-	const camera = new Float32Array([
+	const cameraMatrix = new Float32Array([
 		xScale, 0, +0.0, +0.0,
 		0, yScale, 1 / 32, +0.0,
 		0, yScale / 2, +0.0, +0.0,
-		-(cameraX * xScale), -(cameraY * yScale), +0.0, +1.0,
+		-(camera.x * xScale), -(camera.y * yScale), +0.0, +1.0,
 	]);
 
-	gl.uniformMatrix4fv(loc, false, camera);
-
-	const majorPositionAttrib = gl.getUniformLocation(program, "major_position");
+	gl.uniformMatrix4fv(loc, false, cameraMatrix);
 
 	const drawBlock = (block: Block) => {
 		block.forEach((surface) => {
@@ -579,7 +621,7 @@ void main() {
 		const x = index % MAZE_SIDE;
 		const y = Math.floor(index / MAZE_SIDE);
 
-		gl.uniform3f(majorPositionAttrib, x - HALF, y - HALF, 0);
+		gl.uniform3f(renderInfo.uniform.majorPosition, x - HALF, y - HALF, 0);
 
 		connections & 1 && drawBlock(wall.west);
 		drawBlock(wall.column);
@@ -588,18 +630,38 @@ void main() {
 
 	// draw the north and east walls
 	for (let d = -HALF; d <= HALF; d++) {
-		gl.uniform3f(majorPositionAttrib, d, HALF + 1, 0);
+		gl.uniform3f(renderInfo.uniform.majorPosition, d, HALF + 1, 0);
 		drawBlock(wall.south);
 		drawBlock(wall.column);
 
-		gl.uniform3f(majorPositionAttrib, HALF + 1, d, 0);
+		gl.uniform3f(renderInfo.uniform.majorPosition, HALF + 1, d, 0);
 		drawBlock(wall.west);
 		drawBlock(wall.column);
 	}
 
-	gl.uniform3f(majorPositionAttrib, HALF + 1, HALF + 1, 0);
+	gl.uniform3f(renderInfo.uniform.majorPosition, HALF + 1, HALF + 1, 0);
 	drawBlock(wall.column);
 }
+
+function onKeyboard() {
+
+}
+
+function startOnClick(e: MouseEvent) {
+	console.log("clicked!");
+
+	const canvas = e.target as HTMLCanvasElement;
+	canvas.requestPointerLock();
+
+}
+
+onWindowEvent("mousemove", (e: unknown) => {
+	if (!document.pointerLockElement) return;
+
+	const event = e as MouseEvent;
+
+	console.log(event.movementX, event.movementY);
+});
 
 onWindowEvent("load", () => {
 	try {
