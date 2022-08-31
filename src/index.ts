@@ -271,6 +271,45 @@ function pressed(key: string): 0 | 1 {
  *
  ****************************************************************************/
 
+type Shift = [number, number];
+
+function minShift(shifts: Shift[]): Shift {
+	shifts.sort((a, b) => Math.abs(a[0] + a[1]) - Math.abs(b[0] + b[1]));
+
+	return shifts[0];
+}
+
+function shiftOutOfWall(output: Shift[], game: GameInfo, x: number, y: number) {
+	const { maze } = game;
+
+	const shiftX = HALF + x;
+	const shiftY = HALF + y;
+	const cellX = Math.floor(shiftX);
+	const cellY = Math.floor(shiftY);
+
+	if (cellX < 0 || cellY < 0 || cellX >= MAZE_SIDE || cellY >= MAZE_SIDE) {
+		// outside the maze
+		return null;
+	}
+
+	const dx = shiftX - cellX;
+	const dy = shiftY - cellY;
+	const dRight = WALL_THICKNESS - dx;
+	const dUp = WALL_THICKNESS - dy;
+	const cell = maze[cellY * MAZE_SIDE + cellX];
+
+	if (dRight > 0 && dUp > 0) {
+		// we are in the column, which is always there
+		output.push([-dx, 0], [0, -dy], [dRight, 0], [0, dUp]);
+	} else if (dRight > 0 && BLOCKS_WEST & cell) {
+		output.push([-dx, 0], [dRight, 0]);
+	} else if (dUp > 0 && BLOCKS_SOUTH & cell) {
+		output.push([0, -dy], [0, dUp]);
+	}
+
+	return null;
+}
+
 /****************************************************************************
  *
  * @file game geometry
@@ -822,7 +861,10 @@ void main() {
 		if (!game) return;
 
 		const time = Date.now() / 1000;
-		const dt = clamp(time - game.frameTime, 0, 1);
+
+		// we cap out the dt to prevent large jumps that might take the player
+		// through a wall
+		const dt = clamp(time - game.frameTime, 0, WALL_THICKNESS / 2 / SPEED);
 
 		game.frame++;
 		game.frameTime = time;
@@ -845,10 +887,22 @@ void main() {
 				}
 			}
 
-			game.player.pos = {
-				x: pos.x + Math.sin(facing + angle) * distance,
-				y: pos.y + Math.cos(facing + angle) * distance,
-			};
+			let x = pos.x + Math.sin(facing + angle) * distance;
+			let y = pos.y + Math.cos(facing + angle) * distance;
+
+			const shiftOuts: Shift[] = [];
+			shiftOutOfWall(shiftOuts, game, x + PLAYER_SIDE / 2, y + PLAYER_SIDE / 2);
+			shiftOutOfWall(shiftOuts, game, x + PLAYER_SIDE / 2, y - PLAYER_SIDE / 2);
+			shiftOutOfWall(shiftOuts, game, x - PLAYER_SIDE / 2, y + PLAYER_SIDE / 2);
+			shiftOutOfWall(shiftOuts, game, x - PLAYER_SIDE / 2, y - PLAYER_SIDE / 2);
+
+			if (shiftOuts.length) {
+				const [dx, dy] = minShift(shiftOuts);
+				x += 1.01 * dx;
+				y += 1.01 * dy;
+			}
+
+			game.player.pos = { x, y };
 		}
 
 		render(game);
@@ -872,7 +926,7 @@ onWindowEvent("mousemove", (e: MouseEvent) => {
 	player.facing += ROTATION_SCALING * e.movementX;
 	player.pitch = clamp(
 		player.pitch - ROTATION_SCALING * e.movementY,
-		-1,
+		-0.7,
 		Math.PI / 2
 	);
 });
