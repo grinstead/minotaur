@@ -14,7 +14,7 @@ const HALF = MAZE_SIDE >> 1;
 type Camera = {
 	x: number;
 	y: number;
-}
+};
 
 let camera: Camera = { x: 0.5, y: 0.5 };
 
@@ -274,7 +274,14 @@ type EntityRange = {
 
 type Block = EntityRange[];
 
-function makeWall() {
+type WallBlocks = {
+	south: Block;
+	west: Block;
+	column: Block;
+	rawData: Float32Array;
+};
+
+function makeWallBlocks() {
 	const STEP = WALL_THICKNESS / DETAIL;
 
 	const points: number[] = [];
@@ -398,7 +405,9 @@ function makeWall() {
 const BLOCKS_WEST = 1 << 0;
 const BLOCKS_SOUTH = 1 << 1;
 
-function makeMaze(): number[] {
+type Maze = number[];
+
+function makeMaze(): Maze {
 	const unionFind: number[] = [];
 	for (let i = 0; i < MAZE_SIDE * MAZE_SIDE; i++) {
 		unionFind.push(-1);
@@ -488,18 +497,91 @@ type WebGLAttribute = number;
 
 type RenderInfo = {
 	gl: WebGLRenderingContext;
+	dim: { width: number; height: number };
 	wallProgram: WebGLProgram;
-	attributes: {
+	wallBlocks: WallBlocks;
+	wallBlockBuffer: WebGLBuffer;
+	attribute: {
 		normal: WebGLAttribute;
 		position: WebGLAttribute;
 	};
 	uniform: {
 		majorPosition: WebGLUniformLocation;
-	}
+		projection: WebGLUniformLocation;
+	};
 };
 
-function render() {
+type GameInfo = {
+	maze: Maze;
+	render: RenderInfo;
+};
 
+function render(info: GameInfo) {
+	const {
+		maze,
+		render: { gl, dim, wallProgram, wallBlocks, attribute, uniform },
+	} = info;
+
+	const pxPerBlock = Math.floor(
+		(0.875 * Math.min(dim.width, dim.height)) / MAZE_SIDE
+	);
+
+	gl.useProgram(wallProgram);
+	gl.enable(gl.DEPTH_TEST);
+	gl.enable(gl.CULL_FACE);
+
+	gl.enableVertexAttribArray(attribute.position);
+	gl.vertexAttribPointer(attribute.position, 3, gl.FLOAT, false, 24, 0);
+
+	gl.enableVertexAttribArray(attribute.normal);
+	gl.vertexAttribPointer(attribute.normal, 3, gl.FLOAT, false, 24, 12);
+
+	const cameraX = 0;
+	const cameraY = 0;
+	const xScale = (2 * pxPerBlock) / dim.width;
+	const yScale = (2 * pxPerBlock) / dim.height;
+
+	// prettier-ignore
+	const cameraMatrix = new Float32Array([
+		xScale, 0, +0.0, +0.0,
+		0, yScale, 1 / 32, +0.0,
+		0, yScale / 2, +0.0, +0.0,
+		-(camera.x * xScale), -(camera.y * yScale), +0.0, +1.0,
+	]);
+
+	gl.uniformMatrix4fv(uniform.projection, false, cameraMatrix);
+
+	const drawBlock = (block: Block) => {
+		block.forEach((surface) => {
+			gl.drawArrays(gl.TRIANGLE_STRIP, surface.offset, surface.length);
+		});
+	};
+
+	// draw the maze
+	maze.forEach((connections, index) => {
+		const x = index % MAZE_SIDE;
+		const y = Math.floor(index / MAZE_SIDE);
+
+		gl.uniform3f(uniform.majorPosition, x - HALF, y - HALF, 0);
+
+		connections & 1 && drawBlock(wallBlocks.west);
+		drawBlock(wallBlocks.column);
+		connections & 2 && drawBlock(wallBlocks.south);
+	});
+
+	// draw the north and east walls
+	for (let d = -HALF; d <= HALF; d++) {
+		gl.uniform3f(uniform.majorPosition, d, HALF + 1, 0);
+		drawBlock(wallBlocks.south);
+		drawBlock(wallBlocks.column);
+
+		gl.uniform3f(uniform.majorPosition, HALF + 1, d, 0);
+		drawBlock(wallBlocks.west);
+		drawBlock(wallBlocks.column);
+	}
+
+	gl.uniform3f(uniform.majorPosition, HALF + 1, HALF + 1, 0);
+	drawBlock(wallBlocks.column);
 }
 
 /****************************************************************************
@@ -519,8 +601,6 @@ function run() {
 	const height = window.innerHeight;
 	canvas.width = width;
 	canvas.height = height;
-
-	const pxPerBlock = Math.floor((0.875 * Math.min(width, height)) / MAZE_SIDE);
 
 	const body = document.body;
 
@@ -560,99 +640,49 @@ void main() {
 	gl_FragColor = vec4(brightness * sandstone, 1);
 }`;
 
-	const wall = makeWall();
+	const wallBlocks = makeWallBlocks();
 	const maze = makeMaze();
 
-	const buffer = gl.createBuffer();
-	onRelease(() => void gl.deleteBuffer(buffer));
+	const wallBlockBuffer =
+		gl.createBuffer() || E(1006)`Failed to allocate buffer`;
+	onRelease(() => void gl.deleteBuffer(wallBlockBuffer));
 
-	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-	gl.bufferData(gl.ARRAY_BUFFER, wall.rawData, gl.STATIC_DRAW);
+	gl.bindBuffer(gl.ARRAY_BUFFER, wallBlockBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, wallBlocks.rawData, gl.STATIC_DRAW);
 
 	const wallProgram = PROGRAM(gl, vertexShader, fragmentShader);
 	link(gl, wallProgram);
 
-	gl.useProgram(wallProgram);
-	gl.enable(gl.DEPTH_TEST);
-	gl.enable(gl.CULL_FACE);
-
 	const renderInfo: RenderInfo = {
 		gl,
+		dim: { width, height },
 		wallProgram,
-		attributes: {
+		wallBlocks,
+		wallBlockBuffer,
+		attribute: {
 			position: gl.getAttribLocation(wallProgram, "position"),
 			normal: gl.getAttribLocation(wallProgram, "a_normal"),
 		},
 		uniform: {
-			majorPosition: gl.getUniformLocation(wallProgram, "major_position") || E(1005)`Missing uniform attribute`,
+			majorPosition:
+				gl.getUniformLocation(wallProgram, "major_position") ||
+				E(1005)`Missing uniform attribute`,
+			projection:
+				gl.getUniformLocation(wallProgram, "projection") ||
+				E(1007)`Missing "projection"`,
 		},
 	};
 
-	gl.enableVertexAttribArray(renderInfo.attributes.position);
-	gl.vertexAttribPointer(renderInfo.attributes.position, 3, gl.FLOAT, false, 24, 0);
-
-	gl.enableVertexAttribArray(renderInfo.attributes.normal);
-	gl.vertexAttribPointer(renderInfo.attributes.normal, 3, gl.FLOAT, false, 24, 12);
-
-	const cameraX = 0;
-	const cameraY = 0;
-	const xScale = (2 * pxPerBlock) / width;
-	const yScale = (2 * pxPerBlock) / height;
-
-	const loc = gl.getUniformLocation(wallProgram, "projection");
-	// prettier-ignore
-	const cameraMatrix = new Float32Array([
-		xScale, 0, +0.0, +0.0,
-		0, yScale, 1 / 32, +0.0,
-		0, yScale / 2, +0.0, +0.0,
-		-(camera.x * xScale), -(camera.y * yScale), +0.0, +1.0,
-	]);
-
-	gl.uniformMatrix4fv(loc, false, cameraMatrix);
-
-	const drawBlock = (block: Block) => {
-		block.forEach((surface) => {
-			gl.drawArrays(gl.TRIANGLE_STRIP, surface.offset, surface.length);
-		});
-	};
-
-	// draw the maze
-	maze.forEach((connections, index) => {
-		const x = index % MAZE_SIDE;
-		const y = Math.floor(index / MAZE_SIDE);
-
-		gl.uniform3f(renderInfo.uniform.majorPosition, x - HALF, y - HALF, 0);
-
-		connections & 1 && drawBlock(wall.west);
-		drawBlock(wall.column);
-		connections & 2 && drawBlock(wall.south);
-	});
-
-	// draw the north and east walls
-	for (let d = -HALF; d <= HALF; d++) {
-		gl.uniform3f(renderInfo.uniform.majorPosition, d, HALF + 1, 0);
-		drawBlock(wall.south);
-		drawBlock(wall.column);
-
-		gl.uniform3f(renderInfo.uniform.majorPosition, HALF + 1, d, 0);
-		drawBlock(wall.west);
-		drawBlock(wall.column);
-	}
-
-	gl.uniform3f(renderInfo.uniform.majorPosition, HALF + 1, HALF + 1, 0);
-	drawBlock(wall.column);
+	render({ maze, render: renderInfo });
 }
 
-function onKeyboard() {
-
-}
+function onKeyboard() {}
 
 function startOnClick(e: MouseEvent) {
 	console.log("clicked!");
 
 	const canvas = e.target as HTMLCanvasElement;
 	canvas.requestPointerLock();
-
 }
 
 onWindowEvent("mousemove", (e: unknown) => {
