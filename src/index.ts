@@ -10,11 +10,20 @@ const MAZE_SIDE = 41; // must be odd
 const END_HALLWAY_LENGTH = 6;
 
 const HALF = MAZE_SIDE >> 1;
+const HEAD_HEIGHT = 0.8;
 
 type Camera = {
 	x: number;
 	y: number;
 };
+
+const SPEED = 1.25;
+
+const ROTATION_SCALING = 1 / 512;
+
+let game: null | GameInfo = null;
+
+const activeKeys = new Map<string, FrameId>();
 
 /****************************************************************************
  *
@@ -238,6 +247,20 @@ function shuffledForEach<T>(
 	const rand = array.map(() => Math.random());
 	indices.sort((a, b) => rand[a] - rand[b]);
 	indices.forEach((originalIndex, i) => code(array[originalIndex], i));
+}
+
+function clamp(number: number, min: number, max: number) {
+	return Math.min(Math.max(min, number), max);
+}
+
+/****************************************************************************
+ *
+ * @file keyboard
+ *
+ ****************************************************************************/
+
+function pressed(key: string): 0 | 1 {
+	return activeKeys.has(key) ? 1 : 0;
 }
 
 /****************************************************************************
@@ -595,7 +618,12 @@ type Player = {
 	pitch: Radians;
 };
 
+type FrameId = number;
+
 type GameInfo = {
+	frame: FrameId;
+	frameTime: number;
+	gameTime: number;
 	maze: Maze;
 	camera: Camera;
 	player: Player;
@@ -641,9 +669,10 @@ function render(info: GameInfo) {
 
 	const cameraMatrix = pipe(
 		IDENTITY,
-		shiftAxes(-player.pos.x, -player.pos.y, -3),
+		shiftAxes(-player.pos.x, -player.pos.y, -HEAD_HEIGHT),
 		rotateAboutZ(player.facing),
 		rotateAboutX(player.pitch),
+		shiftAxes(0, -1, 0),
 		APPLY_DEPTH,
 		SWAP_Y_AND_Z,
 		scaleAxes(scale / dim.width, scale / dim.height, 1 / MAZE_SIDE)
@@ -690,7 +719,7 @@ function render(info: GameInfo) {
  *
  ****************************************************************************/
 
-function onWindowEvent(event: string, handler: (e: unknown) => void) {
+function onWindowEvent(event: string, handler: (e: any) => void) {
 	window.addEventListener(event, handler);
 }
 
@@ -753,49 +782,93 @@ void main() {
 	const wallProgram = PROGRAM(gl, vertexShader, fragmentShader);
 	link(gl, wallProgram);
 
-	const renderInfo: RenderInfo = {
-		gl,
-		dim: { width, height },
-		wallProgram,
-		wallBlocks,
-		wallBlockBuffer,
-		attribute: {
-			position: gl.getAttribLocation(wallProgram, "position"),
-			normal: gl.getAttribLocation(wallProgram, "a_normal"),
-		},
-		uniform: {
-			majorPosition:
-				gl.getUniformLocation(wallProgram, "major_position") ||
-				E(1005)`Missing uniform attribute`,
-			projection:
-				gl.getUniformLocation(wallProgram, "projection") ||
-				E(1007)`Missing "projection"`,
+	game = {
+		frame: 1,
+		frameTime: Date.now() / 1000,
+		gameTime: 0,
+		maze,
+		camera: { x: 0.6, y: 0.6 },
+		player: { pos: { x: 0.6, y: 0.6 }, facing: 0, pitch: 0 },
+		renderInfo: {
+			gl,
+			dim: { width, height },
+			wallProgram,
+			wallBlocks,
+			wallBlockBuffer,
+			attribute: {
+				position: gl.getAttribLocation(wallProgram, "position"),
+				normal: gl.getAttribLocation(wallProgram, "a_normal"),
+			},
+			uniform: {
+				majorPosition:
+					gl.getUniformLocation(wallProgram, "major_position") ||
+					E(1005)`Missing uniform attribute`,
+				projection:
+					gl.getUniformLocation(wallProgram, "projection") ||
+					E(1007)`Missing "projection"`,
+			},
 		},
 	};
 
-	render({
-		maze,
-		camera: { x: 0.6, y: 0.6 },
-		player: { pos: { x: 0.6, y: 0.6 }, facing: Math.PI, pitch: -0.8 },
-		renderInfo,
-	});
+	const runFrame = () => {
+		if (!game) return;
+
+		const time = Date.now() / 1000;
+		const dt = clamp(time - game.frameTime, 0, 1);
+
+		game.frame++;
+		game.frameTime = time;
+		game.gameTime += dt;
+
+		const forward = pressed("w");
+		const strafing = pressed("d") - pressed("a");
+
+		if (forward || strafing) {
+			const { pos, facing } = game.player;
+			const distance = SPEED * dt;
+
+			// dividing by 1 + forward is a clever way to divide the
+			// angle in half when forward is pressed.
+			const angle = (strafing * (Math.PI / 2)) / (1 + forward);
+
+			game.player.pos = {
+				x: pos.x + Math.sin(facing + angle) * distance,
+				y: pos.y + Math.cos(facing + angle) * distance,
+			};
+		}
+
+		render(game);
+
+		requestAnimationFrame(runFrame);
+	};
+
+	requestAnimationFrame(runFrame);
 }
 
-function onKeyboard() {}
-
 function startOnClick(e: MouseEvent) {
-	console.log("clicked!");
-
 	const canvas = e.target as HTMLCanvasElement;
 	canvas.requestPointerLock();
 }
 
-onWindowEvent("mousemove", (e: unknown) => {
-	if (!document.pointerLockElement) return;
+onWindowEvent("mousemove", (e: MouseEvent) => {
+	if (!game || !document.pointerLockElement) return;
 
-	const event = e as MouseEvent;
+	const { player } = game;
 
-	console.log(event.movementX, event.movementY);
+	player.facing += ROTATION_SCALING * e.movementX;
+	player.pitch = clamp(
+		player.pitch - ROTATION_SCALING * e.movementY,
+		-1,
+		Math.PI / 2
+	);
+});
+
+onWindowEvent("keydown", (e: KeyboardEvent) => {
+	activeKeys.set(e.key, game?.frame || -1);
+});
+
+onWindowEvent("keyup", (e: KeyboardEvent) => {
+	activeKeys.delete(e.key);
 });
 
 onWindowEvent("load", () => {
