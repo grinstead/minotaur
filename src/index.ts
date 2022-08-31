@@ -16,8 +16,6 @@ type Camera = {
 	y: number;
 };
 
-let camera: Camera = { x: 0.5, y: 0.5 };
-
 /****************************************************************************
  *
  * @file raii
@@ -224,25 +222,6 @@ function plainLiteral(parts: TemplateStringsArray, args: unknown[]): string {
 	return text.join("");
 }
 
-// taken from https://stackoverflow.com/a/70219726
-// prettier-ignore
-const CUBE = new Float32Array([
-  +0.5, +0.5, -0.5, // Back-top-right
-  -0.5, +0.5, -0.5, // Back-top-left
-  +0.5, -0.5, -0.5, // Back-bottom-right
-  -0.5, -0.5, -0.5, // Back-bottom-left
-  -0.5, -0.5, +0.5, // Front-bottom-left
-  -0.5, +0.5, -0.5, // Back-top-left
-  -0.5, +0.5, +0.5, // Front-top-left
-  +0.5, +0.5, -0.5, // Back-top-right
-  +0.5, +0.5, +0.5, // Front-top-right
-  +0.5, -0.5, -0.5, // Back-bottom-right
-  +0.5, -0.5, +0.5, // Front-bottom-right
-  -0.5, -0.5, +0.5, // Front-bottom-left
-  +0.5, +0.5, +0.5, // Front-top-right
-  -0.5, +0.5, +0.5, // Front-top-left
-]);
-
 // prettier-ignore
 const IDENTITY = new Float32Array([
 	1, 0, 0, 0,
@@ -405,9 +384,13 @@ function makeWallBlocks() {
 // always 4x4
 type Matrix = Float32Array;
 
+function MATRIX(...args: number[]): Matrix {
+	return new Float32Array(args);
+}
+
 function mult(A: Matrix, B: Matrix): Matrix {
 	// Multiply A and B... beautiful...
-	const matrix = new Float32Array([
+	const matrix = MATRIX(
 		A[0] * B[0] + A[1] * B[4] + A[2] * B[8] + A[3] * B[12],
 		A[0] * B[1] + A[1] * B[5] + A[2] * B[9] + A[3] * B[13],
 		A[0] * B[2] + A[1] * B[6] + A[2] * B[10] + A[3] * B[14],
@@ -423,10 +406,34 @@ function mult(A: Matrix, B: Matrix): Matrix {
 		A[12] * B[0] + A[13] * B[4] + A[14] * B[8] + A[15] * B[12],
 		A[12] * B[1] + A[13] * B[5] + A[14] * B[9] + A[15] * B[13],
 		A[12] * B[2] + A[13] * B[6] + A[14] * B[10] + A[15] * B[14],
-		A[12] * B[3] + A[13] * B[7] + A[14] * B[11] + A[15] * B[15],
-	]);
+		A[12] * B[3] + A[13] * B[7] + A[14] * B[11] + A[15] * B[15]
+	);
 
 	return matrix;
+}
+
+function pipe(...matrices: Matrix[]): Matrix {
+	return matrices.reduceRight((acc, mat) => mult(mat, acc));
+}
+
+function scaleAxes(x: number, y: number, z: number) {
+	// prettier-ignore
+	return MATRIX(
+		x, 0, 0, 0,
+		0, y, 0, 0,
+		0, 0, z, 0,
+		0, 0, 0, 1,
+	);
+}
+
+function shiftAxes(x: number, y: number, z: number) {
+	// prettier-ignore
+	return MATRIX(
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		x, y, z, 1,
+	);
 }
 
 /****************************************************************************
@@ -546,12 +553,14 @@ type RenderInfo = {
 
 type GameInfo = {
 	maze: Maze;
+	camera: Camera;
 	renderInfo: RenderInfo;
 };
 
 function render(info: GameInfo) {
 	const {
 		maze,
+		camera,
 		renderInfo: { gl, dim, wallProgram, wallBlocks, attribute, uniform },
 	} = info;
 
@@ -582,13 +591,38 @@ function render(info: GameInfo) {
 	]);
 	*/
 
+	// // prettier-ignore
+	// const cameraMatrix = new Float32Array([
+	// 	1/2, 0, +0.0, +0.0,
+	// 	0, 0, 1 / MAZE_SIDE, 1,
+	// 	0, 1, +0.0, +0.0,
+	// 	camera.x, -.6, -camera.y / MAZE_SIDE, 0,
+	// ]);
+
 	// prettier-ignore
-	const cameraMatrix = new Float32Array([
-		1/2, 0, +0.0, +0.0,
-		0, 0, 1 / MAZE_SIDE, 1,
-		0, 1, +0.0, +0.0,
-		camera.x, -.6, -camera.y / MAZE_SIDE, 0,
-	]);
+	const APPLY_DEPTH = MATRIX(
+		1, 0, 0, 0,
+		0, 1, 0, 1,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	);
+
+	// swaps the y and z axes
+	// prettier-ignore
+	const SWAP_Y_AND_Z = MATRIX(
+		1, 0, 0, 0,
+		0, 0, 1, 0,
+		0, 1, 0, 0,
+		0, 0, 0, 1,
+	);
+
+	const cameraMatrix = pipe(
+		IDENTITY,
+		shiftAxes(-camera.x, -camera.y, -2),
+		APPLY_DEPTH,
+		SWAP_Y_AND_Z,
+		scaleAxes(1, 1, 1 / MAZE_SIDE)
+	);
 
 	gl.uniformMatrix4fv(uniform.projection, false, cameraMatrix);
 
@@ -714,7 +748,7 @@ void main() {
 		},
 	};
 
-	render({ maze, renderInfo });
+	render({ maze, camera: { x: 0.6, y: 0.6 }, renderInfo });
 }
 
 function onKeyboard() {}
