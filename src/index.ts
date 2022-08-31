@@ -412,6 +412,42 @@ function mult(A: Matrix, B: Matrix): Matrix {
 	return matrix;
 }
 
+function rotateAboutX(angle: Radians): Matrix {
+	const cos = Math.cos(angle);
+	const sin = Math.sin(angle);
+	// prettier-ignore
+	return MATRIX(
+		1, 0, 0, 0,
+		0, cos, -sin, 0,
+		0, sin, cos, 0,
+		0, 0, 0, 1,
+  );
+}
+
+function rotateAboutY(angle: Radians): Matrix {
+	const cos = Math.cos(angle);
+	const sin = Math.sin(angle);
+	// prettier-ignore
+	return MATRIX(
+		cos, 0, sin, 0,
+		0, 1, 0, 0,
+		-sin, 0, cos, 0,
+		0, 0, 0, 1,
+  );
+}
+
+function rotateAboutZ(angle: Radians): Matrix {
+	const cos = Math.cos(angle);
+	const sin = Math.sin(angle);
+	// prettier-ignore
+	return MATRIX(
+		cos, sin, 0, 0,
+		-sin, cos, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+  );
+}
+
 function pipe(...matrices: Matrix[]): Matrix {
 	return matrices.reduceRight((acc, mat) => mult(mat, acc));
 }
@@ -551,16 +587,26 @@ type RenderInfo = {
 	};
 };
 
+type Radians = number;
+
+type Player = {
+	pos: { x: number; y: number };
+	facing: Radians;
+	pitch: Radians;
+};
+
 type GameInfo = {
 	maze: Maze;
 	camera: Camera;
+	player: Player;
 	renderInfo: RenderInfo;
 };
 
 function render(info: GameInfo) {
 	const {
 		maze,
-		camera,
+		player,
+		// camera,
 		renderInfo: { gl, dim, wallProgram, wallBlocks, attribute, uniform },
 	} = info;
 
@@ -573,31 +619,6 @@ function render(info: GameInfo) {
 
 	gl.enableVertexAttribArray(attribute.normal);
 	gl.vertexAttribPointer(attribute.normal, 3, gl.FLOAT, false, 24, 12);
-
-	/*
-	const pxPerBlock = Math.floor(
-		(0.875 * Math.min(dim.width, dim.height)) / MAZE_SIDE
-	);
-
-	const xScale = (2 * pxPerBlock) / dim.width;
-	const yScale = (2 * pxPerBlock) / dim.height;
-
-	// prettier-ignore
-	const cameraMatrix = new Float32Array([
-		xScale, 0, +0.0, +0.0,
-		0, yScale, 1 / 32, +0.0,
-		0, yScale / 2, +0.0, +0.0,
-		-(camera.x * xScale), -(camera.y * yScale), +0.0, +1.0,
-	]);
-	*/
-
-	// // prettier-ignore
-	// const cameraMatrix = new Float32Array([
-	// 	1/2, 0, +0.0, +0.0,
-	// 	0, 0, 1 / MAZE_SIDE, 1,
-	// 	0, 1, +0.0, +0.0,
-	// 	camera.x, -.6, -camera.y / MAZE_SIDE, 0,
-	// ]);
 
 	// prettier-ignore
 	const APPLY_DEPTH = MATRIX(
@@ -620,7 +641,9 @@ function render(info: GameInfo) {
 
 	const cameraMatrix = pipe(
 		IDENTITY,
-		shiftAxes(-camera.x, -camera.y, -0.8),
+		shiftAxes(-player.pos.x, -player.pos.y, -3),
+		rotateAboutZ(player.facing),
+		rotateAboutX(player.pitch),
 		APPLY_DEPTH,
 		SWAP_Y_AND_Z,
 		scaleAxes(scale / dim.width, scale / dim.height, 1 / MAZE_SIDE)
@@ -750,7 +773,12 @@ void main() {
 		},
 	};
 
-	render({ maze, camera: { x: 0.6, y: 0.6 }, renderInfo });
+	render({
+		maze,
+		camera: { x: 0.6, y: 0.6 },
+		player: { pos: { x: 0.6, y: 0.6 }, facing: Math.PI, pitch: -0.8 },
+		renderInfo,
+	});
 }
 
 function onKeyboard() {}
