@@ -327,6 +327,7 @@ type WallBlocks = {
 	south: Block;
 	west: Block;
 	column: Block;
+	floor: Block;
 	rawData: Float32Array;
 };
 
@@ -344,6 +345,7 @@ function makeWallBlocks() {
 	const column: Block = [];
 	const south: Block = [];
 	const west: Block = [];
+	const floor: Block = [];
 
 	let surfaceStartIndex = 0;
 	const finishSurface = (block: Block) => {
@@ -437,10 +439,17 @@ function makeWallBlocks() {
 	portionColumn();
 	finishSurface(west);
 
+	vertex(0, 0, 0);
+	vertex(1, 0, 0);
+	vertex(0, 1, 0);
+	vertex(1, 1, 0);
+	finishSurface(floor);
+
 	return {
 		south,
 		west,
 		column,
+		floor,
 		rawData: new Float32Array(points),
 	};
 }
@@ -743,6 +752,7 @@ function render(info: GameInfo) {
 		connections & 1 && drawBlock(wallBlocks.west);
 		drawBlock(wallBlocks.column);
 		connections & 2 && drawBlock(wallBlocks.south);
+		drawBlock(wallBlocks.floor);
 	});
 
 	// draw the north and east walls
@@ -813,13 +823,22 @@ varying vec3 v_position;
 
 vec3 sunlight = vec3(-.3, -.8, 1);
 vec3 sandstone = vec3(0.84, 0.76, 0.64);
+vec3 cobble = vec3(0.22, 0.2, 0.18);
 
 void main() {
-	float brightness = min(1.1, 0.8 + 0.3 * dot(v_normal, sunlight));
-	vec3 color = sandstone;
-	// color *= (1.0 + sin(30.0 * (v_position.z + v_position.x))) / 2.0;
-	color *= (v_position.z * v_position.z + 1.0) / 2.0;
+	vec3 normal, color;
 
+	if (v_position.z > 0.0) {
+		// wall
+		normal = v_normal;
+		color = sandstone * (v_position.z * v_position.z + 1.0) / 2.0;
+	} else {
+		// floor
+		color = cobble;
+		normal = vec3(0.0, 0.0, 1.0);
+	}
+
+	float brightness = min(1.1, 0.8 + 0.3 * dot(normal, sunlight));
 	gl_FragColor = vec4(brightness * color, 1);
 }`;
 
