@@ -797,8 +797,10 @@ uniform mat4 projection;
 uniform vec3 major_position;
 
 varying vec3 v_normal;
+varying vec3 v_position;
 
 void main() {
+	v_position = position + major_position;
 	gl_Position = projection * vec4(position + major_position, 1);
 	v_normal = a_normal;
 }`;
@@ -807,13 +809,18 @@ void main() {
 precision mediump float;
 
 varying vec3 v_normal;
+varying vec3 v_position;
 
 vec3 sunlight = vec3(-.3, -.8, 1);
 vec3 sandstone = vec3(0.84, 0.76, 0.64);
 
 void main() {
 	float brightness = min(1.1, 0.8 + 0.3 * dot(v_normal, sunlight));
-	gl_FragColor = vec4(brightness * sandstone, 1);
+	vec3 color = sandstone;
+	// color *= (1.0 + sin(30.0 * (v_position.z + v_position.x))) / 2.0;
+	color *= (v_position.z * v_position.z + 1.0) / 2.0;
+
+	gl_FragColor = vec4(brightness * color, 1);
 }`;
 
 	const wallBlocks = makeWallBlocks();
